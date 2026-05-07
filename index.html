@@ -3,110 +3,167 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>釣果ログ ver3.0</title>
+    <title>釣果ログ ver2.0(自動デプロイ完了！)</title>
     <style>
-        /* シンプルで見やすいデザイン（スマホ対応） */
-        body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; background-color: #f8f9fa; }
-        .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { font-size: 24px; color: #333; text-align: center; }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; font-weight: bold; color: #555; }
-        input, select { width: 100%; padding: 12px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
-        button { width: 100%; padding: 15px; background-color: #007bff; color: white; border: none; border-radius: 5px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        button:hover { background-color: #0056b3; }
-        #message { margin-top: 20px; font-weight: bold; text-align: center; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 20px; max-width: 400px; margin: auto; background-color: #f4f7f6; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { text-align: center; color: #333; }
+        label { font-weight: bold; margin-top: 10px; display: block; color: #555; font-size: 14px; }
+        input { width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; background-color: #0056b3; color: white; border: none; padding: 12px; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        button:active { background-color: #004494; }
+        #result { margin-top: 15px; text-align: center; font-weight: bold; }
+        .log-item { border-bottom: 1px solid #eee; padding: 15px 0; }
+        .log-item:last-child { border-bottom: none; }
+        .log-title { font-weight: bold; color: #0056b3; font-size: 18px; }
+        .log-detail { font-size: 14px; color: #666; margin-top: 5px; line-height: 1.5; }
+        .log-date { font-size: 12px; color: #aaa; text-align: right; margin-top: 5px; }
+        .refresh-btn { background-color: #28a745; margin-bottom: 15px; }
+        .refresh-btn:active { background-color: #218838; }
+        /* ログアウトボタン用 */
+        .logout-btn { background-color: #dc3545; margin-bottom: 20px; font-size: 14px; padding: 8px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🎣 釣果ログ ver3.0</h1>
-        <p style="text-align: center; font-size: 14px; color: #666;">場所を選ぶと、裏側で天気と潮回りが自動記録されます。</p>
+    <button class="logout-btn" onclick="logout()">🚪 ログアウト</button>
 
-        <form id="fishingForm">
-            <div class="form-group">
-                <label for="fishType">🐟 釣れた魚種:</label>
-                <input type="text" id="fishType" name="fishType" placeholder="例: ヒラメ、シーバス" required>
-            </div>
-
-            <div class="form-group">
-                <label for="size">📏 サイズ (cm):</label>
-                <input type="number" id="size" name="size" placeholder="例: 45" required>
-            </div>
-
-            <div class="form-group">
-                <label for="location">📍 釣り場を選択:</label>
-                <select id="location" name="location" required>
-                    <option value="34.99,139.86">館山港（千葉県）</option>
-                    <option value="35.14,140.32">勝浦港（千葉県）</option>
-                    <option value="35.28,139.21">国府津海岸（神奈川県）</option>
-                </select>
-            </div>
-
-            <button type="submit">ログを記録する</button>
+    <div class="card">
+        <h2>🎣 釣果を記録する</h2>
+        <form id="logForm">
+            <label>魚種</label>
+            <input type="text" id="species" placeholder="例: ヒラメ" required>
+            <label>サイズ (cm)</label>
+            <input type="number" id="size" placeholder="例: 45" required>
+            <label>ヒットルアー</label>
+            <input type="text" id="lure" placeholder="例: 飛びすぎダニエル">
+            <label>漁港・ポイント</label>
+            <input type="text" id="location" placeholder="例: 国府津サーフ">
+            <label>天気</label>
+            <input type="text" id="weather" placeholder="例: 晴れ">
+            <button type="submit">データベースに記録</button>
         </form>
+        <div id="result"></div>
+    </div>
 
-        <div id="message"></div>
+    <div class="card">
+        <h2>📖 過去の釣果履歴</h2>
+        <button class="refresh-btn" onclick="fetchLogs()">最新の履歴を読み込む</button>
+        <div id="logList"></div>
     </div>
 
     <script>
-        // ⚠️【超重要】ここをご自身のAPI GatewayのURL（エンドポイント）に書き換えてください！
-        const API_ENDPOINT = 'https://x3dcy3ddl8.execute-api.ap-northeast-1.amazonaws.com/prod/log';
+        // ==========================================
+        // ⚠️ 以下の3行をあなたの環境に合わせて書き換えてください！
+        // ==========================================
+        const CLIENT_ID = '6gkr7v63c4i9ucajj1a4kvd13a'; // 例: 1a2b3c4d5e...
+        const COGNITO_DOMAIN = 'https://ap-northeast-1enwtcm1pw.auth.ap-northeast-1.amazoncognito.com';
+        const REDIRECT_URI = 'https://druaud3hbhfn8.cloudfront.net/'; // 先ほどのCloudFrontのURL（末尾の / を忘れずに！）
+        
+        // API GatewayのURL（ここは今までと同じです）
+        const API_URL = 'https://cxxwzjmt58.execute-api.ap-northeast-1.amazonaws.com/Dev/logs';
+        // ==========================================
 
-        // Cognitoのログイン画面から戻ってきた時の「通行証（トークン）」をURLから抜き取る処理
-        let idToken = '';
-        const hash = window.location.hash.substring(1);
-        const params = new URLSearchParams(hash);
-        if (params.has('id_token')) {
-            idToken = params.get('id_token');
+        // --- 1. ログインチェック機能 ---
+        function checkLogin() {
+            const hash = window.location.hash;
+            if (hash && hash.includes('id_token=')) {
+                // URLから通行手形（トークン）を取り出して保存
+                const params = new URLSearchParams(hash.substring(1));
+                sessionStorage.setItem('fishing_log_token', params.get('id_token'));
+                window.history.replaceState({}, document.title, REDIRECT_URI); // URLを綺麗にする
+            }
+
+            const token = sessionStorage.getItem('fishing_log_token');
+            if (!token) {
+                // 手形がない場合はCognitoのログイン画面へ強制移動！
+                window.location.href = `${COGNITO_DOMAIN}/login?client_id=${CLIENT_ID}&response_type=token&scope=openid+email&redirect_uri=${REDIRECT_URI}`;
+            } else {
+                fetchLogs(); // ログイン済みなら履歴を読み込む
+            }
         }
 
-        // 送信ボタンが押された時の処理
-        document.getElementById('fishingForm').addEventListener('submit', async (e) => {
-            e.preventDefault(); // 画面の再読み込みを防ぐ
-            const messageEl = document.getElementById('message');
-            messageEl.textContent = '⏳ 送信中...（裏側で天気を取得しています）';
-            messageEl.style.color = '#555';
+        // --- 2. ログアウト機能 ---
+        function logout() {
+            sessionStorage.removeItem('fishing_log_token');
+            window.location.href = `${COGNITO_DOMAIN}/logout?client_id=${CLIENT_ID}&logout_uri=${REDIRECT_URI}`;
+        }
 
-            // 入力された値を取得
-            const fishType = document.getElementById('fishType').value;
-            const size = document.getElementById('size').value;
-            const locationValue = document.getElementById('location').value;
+        // --- 3. データ送信（POST） ---
+        document.getElementById('logForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerText = "送信中...";
+            const token = sessionStorage.getItem('fishing_log_token');
 
-            // 💡 ここがポイント！ プルダウンの value（"34.99,139.86"）をカンマで区切って lat と lon に分ける
-            const [lat, lon] = locationValue.split(',');
-
-            // Lambdaへ送るデータの塊（JSON）を作る
-            const payload = {
-                fishType: fishType,
-                size: Number(size),
-                lat: parseFloat(lat),
-                lon: parseFloat(lon)
+            const data = {
+                species: document.getElementById('species').value,
+                size: document.getElementById('size').value,
+                lure: document.getElementById('lure').value,
+                location: document.getElementById('location').value,
+                weather: document.getElementById('weather').value
             };
 
-            try {
-                // API Gatewayへデータを送信（fetch）
-                const response = await fetch(API_ENDPOINT, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': idToken // 通行証を提示してCognito認証を突破
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                if (response.ok) {
-                    messageEl.textContent = '✅ 記録完了！天気・潮回りも自動保存されました！';
-                    messageEl.style.color = '#28a745';
-                    document.getElementById('fishingForm').reset(); // 入力欄を空に戻す
-                } else {
-                    throw new Error('APIからの応答がエラーです');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                messageEl.textContent = '❌ 送信エラー。Cognitoの有効期限切れ、または設定を確認してください。';
-                messageEl.style.color = '#dc3545';
-            }
+            fetch(API_URL, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': token  // 👈 ここで通行手形をAPI Gatewayに見せる！
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('認証エラー等の失敗');
+                return response.json();
+            })
+            .then(() => {
+                resultDiv.style.color = "green";
+                resultDiv.innerText = "✅ 保存成功！";
+                document.getElementById('logForm').reset();
+                fetchLogs();
+            })
+            .catch(err => {
+                resultDiv.style.color = "red";
+                resultDiv.innerText = "❌ 送信失敗 (再ログインが必要かも)";
+            });
         });
+
+        // --- 4. データ取得（GET） ---
+        function fetchLogs() {
+            const token = sessionStorage.getItem('fishing_log_token');
+            const logListDiv = document.getElementById('logList');
+            logListDiv.innerHTML = '<p>読み込み中...</p>';
+
+            fetch(API_URL, {
+                method: 'GET',
+                headers: { 'Authorization': token } // 👈 読み込み時も手形を見せる
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('認証エラー等の失敗');
+                return response.json();
+            })
+            .then(data => {
+                logListDiv.innerHTML = '';
+                if (data.length === 0) {
+                    logListDiv.innerHTML = '<p>まだ記録がありません。</p>';
+                    return;
+                }
+                data.forEach(item => {
+                    const dateStr = new Date(item.Timestamp).toLocaleString('ja-JP');
+                    logListDiv.innerHTML += `
+                        <div class="log-item">
+                            <div class="log-title">🐟 ${item.Species} (${item.Size}cm)</div>
+                            <div class="log-detail">📍 ${item.Location} | 🌤️ ${item.Weather} <br>🎣 ルアー: ${item.Lure}</div>
+                            <div class="log-date">${dateStr}</div>
+                        </div>`;
+                });
+            })
+            .catch(err => {
+                logListDiv.innerHTML = '<p style="color:red;">履歴の取得に失敗しました</p>';
+            });
+        }
+
+        // 画面が開かれた瞬間にログインチェックを実行！
+        window.onload = checkLogin;
     </script>
 </body>
 </html>
