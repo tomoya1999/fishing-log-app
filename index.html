@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>釣果ログ ver2.0(自動デプロイ完了！)</title>
+    <title>釣果ログ ver3.0(場所プルダウン対応)</title>
     <style>
         body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 20px; max-width: 400px; margin: auto; background-color: #f4f7f6; }
         .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
         h2 { text-align: center; color: #333; }
         label { font-weight: bold; margin-top: 10px; display: block; color: #555; font-size: 14px; }
-        input { width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        input, select { width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
         button { width: 100%; background-color: #0056b3; color: white; border: none; padding: 12px; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer; }
         button:active { background-color: #004494; }
         #result { margin-top: 15px; text-align: center; font-weight: bold; }
@@ -20,7 +20,6 @@
         .log-date { font-size: 12px; color: #aaa; text-align: right; margin-top: 5px; }
         .refresh-btn { background-color: #28a745; margin-bottom: 15px; }
         .refresh-btn:active { background-color: #218838; }
-        /* ログアウトボタン用 */
         .logout-btn { background-color: #dc3545; margin-bottom: 20px; font-size: 14px; padding: 8px; }
     </style>
 </head>
@@ -36,10 +35,13 @@
             <input type="number" id="size" placeholder="例: 45" required>
             <label>ヒットルアー</label>
             <input type="text" id="lure" placeholder="例: 飛びすぎダニエル">
-            <label>漁港・ポイント</label>
-            <input type="text" id="location" placeholder="例: 国府津サーフ">
-            <label>天気</label>
-            <input type="text" id="weather" placeholder="例: 晴れ">
+            
+            <label>📍 漁港・ポイントを選択</label>
+            <select id="location" required>
+                <option value="34.99,139.86">館山港（千葉県）</option>
+                <option value="35.14,140.32">勝浦港（千葉県）</option>
+                <option value="35.28,139.21">国府津海岸（神奈川県）</option>
+            </select>
             <button type="submit">データベースに記録</button>
         </form>
         <div id="result"></div>
@@ -53,13 +55,11 @@
 
     <script>
         // ==========================================
-        // ⚠️ 以下の3行をあなたの環境に合わせて書き換えてください！
+        // ⚠️ あなたの環境設定（変更なし！）
         // ==========================================
-        const CLIENT_ID = '6gkr7v63c4i9ucajj1a4kvd13a'; // 例: 1a2b3c4d5e...
+        const CLIENT_ID = '6gkr7v63c4i9ucajj1a4kvd13a';
         const COGNITO_DOMAIN = 'https://ap-northeast-1enwtcm1pw.auth.ap-northeast-1.amazoncognito.com';
-        const REDIRECT_URI = 'https://druaud3hbhfn8.cloudfront.net/'; // 先ほどのCloudFrontのURL（末尾の / を忘れずに！）
-        
-        // API GatewayのURL（ここは今までと同じです）
+        const REDIRECT_URI = 'https://druaud3hbhfn8.cloudfront.net/';
         const API_URL = 'https://cxxwzjmt58.execute-api.ap-northeast-1.amazonaws.com/Dev/logs';
         // ==========================================
 
@@ -67,18 +67,16 @@
         function checkLogin() {
             const hash = window.location.hash;
             if (hash && hash.includes('id_token=')) {
-                // URLから通行手形（トークン）を取り出して保存
                 const params = new URLSearchParams(hash.substring(1));
                 sessionStorage.setItem('fishing_log_token', params.get('id_token'));
-                window.history.replaceState({}, document.title, REDIRECT_URI); // URLを綺麗にする
+                window.history.replaceState({}, document.title, REDIRECT_URI);
             }
 
             const token = sessionStorage.getItem('fishing_log_token');
             if (!token) {
-                // 手形がない場合はCognitoのログイン画面へ強制移動！
                 window.location.href = `${COGNITO_DOMAIN}/login?client_id=${CLIENT_ID}&response_type=token&scope=openid+email&redirect_uri=${REDIRECT_URI}`;
             } else {
-                fetchLogs(); // ログイン済みなら履歴を読み込む
+                fetchLogs();
             }
         }
 
@@ -92,22 +90,31 @@
         document.getElementById('logForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const resultDiv = document.getElementById('result');
-            resultDiv.innerText = "送信中...";
+            resultDiv.innerText = "送信中...（裏側で天気を取得準備中）";
             const token = sessionStorage.getItem('fishing_log_token');
 
+            // 🌟 プルダウンから「緯度経度」と「場所の名前」を抽出する処理を追加
+            const locationEl = document.getElementById('location');
+            const locationValue = locationEl.value; // "34.99,139.86" のような値
+            const locationName = locationEl.options[locationEl.selectedIndex].text; // "館山港（千葉県）" のようなテキスト
+            const [lat, lon] = locationValue.split(',');
+
+            // 🌟 Lambdaへ送るデータの形をアップデート
             const data = {
                 species: document.getElementById('species').value,
                 size: document.getElementById('size').value,
                 lure: document.getElementById('lure').value,
-                location: document.getElementById('location').value,
-                weather: document.getElementById('weather').value
+                location: locationName, // 履歴表示用に名前も送る
+                lat: parseFloat(lat),   // 今後Lambdaで天気APIを叩くための座標
+                lon: parseFloat(lon),   // 同上
+                weather: "🌤️ 自動取得機能を追加中..." // Lambdaが改修されるまでの仮置きテキスト
             };
 
             fetch(API_URL, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': token  // 👈 ここで通行手形をAPI Gatewayに見せる！
+                    'Authorization': token 
                 },
                 body: JSON.stringify(data)
             })
@@ -135,7 +142,7 @@
 
             fetch(API_URL, {
                 method: 'GET',
-                headers: { 'Authorization': token } // 👈 読み込み時も手形を見せる
+                headers: { 'Authorization': token }
             })
             .then(response => {
                 if (!response.ok) throw new Error('認証エラー等の失敗');
@@ -152,7 +159,7 @@
                     logListDiv.innerHTML += `
                         <div class="log-item">
                             <div class="log-title">🐟 ${item.Species} (${item.Size}cm)</div>
-                            <div class="log-detail">📍 ${item.Location} | 🌤️ ${item.Weather} <br>🎣 ルアー: ${item.Lure}</div>
+                            <div class="log-detail">📍 ${item.Location} | ${item.Weather} <br>🎣 ルアー: ${item.Lure}</div>
                             <div class="log-date">${dateStr}</div>
                         </div>`;
                 });
@@ -162,7 +169,6 @@
             });
         }
 
-        // 画面が開かれた瞬間にログインチェックを実行！
         window.onload = checkLogin;
     </script>
 </body>
